@@ -13,7 +13,8 @@ let defaultScript = {
     output: {
         handle: null,
         files: []
-    }
+    },
+    conversionStarted: false
 }
 if ((window.showDirectoryPicker ?? "") === "") document.getElementById("notSupported").style.display = "";
 async function openFile(isInput) {
@@ -48,6 +49,7 @@ function getFileHash(file) {
     })
 }
 async function startCopy() {
+    defaultScript.conversionStarted = true;
     document.getElementById("progress").max = defaultScript.input.files.length;
     for (let i = 0; i < defaultScript.input.files.length; i++) {
         let item = defaultScript.input.files[i];
@@ -79,6 +81,7 @@ async function startCopy() {
     }
     duplicatesFound.finished = true;
     updateOperationStatus();
+    defaultScript.conversionStarted = false;
 }
 function updateOperationStatus() {
     if (!duplicatesFound.finished) return;
@@ -185,8 +188,8 @@ function changeTheme() {
 }
 window.onbeforeunload = confirmExit;
 function confirmExit() {
-    if (!duplicatesFound.finished && defaultScript.input.files !== 0) {
-        return "A copy operation is ongoing (or it's being initialized). Do you want to close?";
+    if (defaultScript.conversionStarted) {
+        return "A copy operation is ongoing. Do you want to close?";
     }
 }
 if (localStorage.getItem("EasyBackup-Theme") === "a") changeTheme();
