@@ -37,6 +37,16 @@ let duplicatesFound = {
     duplicates: 0,
     finished: false
 };
+function getFileHash(file) {
+    return new Promise((resolve) => {
+        let reader = new FileReader();
+        reader.onload = async () => {
+            let hash = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", reader.result)));
+            resolve(hash.map((e) => e.toString(16).padStart(2, "0")).join(""));
+        }
+        reader.readAsArrayBuffer(file);
+    })
+}
 async function startCopy() {
     document.getElementById("progress").max = defaultScript.input.files.length;
     for (let i = 0; i < defaultScript.input.files.length; i++) {
@@ -53,7 +63,12 @@ async function startCopy() {
         let file = await inputFileHandle.getFile();
         let isOriginal = defaultScript.output.files.indexOf(item) === -1 || document.getElementById("overwrite").value === "overwrite";
         let getTableContent = createTable({ file: file, duplicate: isOriginal ? undefined : await getOutputHandle.getFile(), name: item, getOutputHandle: getOutputHandle });
-        if (isOriginal || document.getElementById("overwrite").value === "ask") document.getElementById("addFiles").insertBefore(getTableContent.row, isOriginal ? null : document.getElementById("addFiles").children[1]);
+        let checkForHash = !isOriginal && document.getElementById("overwrite").value === "askcheck" && await getFileHash(file) !== await getFileHash(await getOutputHandle.getFile());
+        if (document.getElementById("overwrite").value === "askcheck" && !isOriginal && !checkForHash) {
+            duplicatesFound.duplicates--;
+            document.getElementById("progress").value = parseInt(document.getElementById("progress").value) + 1;
+        }
+        if (isOriginal || document.getElementById("overwrite").value === "ask" || checkForHash) document.getElementById("addFiles").insertBefore(getTableContent.row, isOriginal ? null : document.getElementById("addFiles").children[1]);
         if (isOriginal) {
             document.getElementById("progress").value = parseInt(document.getElementById("progress").value) + 1;
             let writableStream = await getOutputHandle.createWritable();
@@ -82,7 +97,6 @@ function createTable({ file, duplicate, name, getOutputHandle }) {
     fileLink.textContent = name;
     fileLink.onclick = () => { getFile(file, fileLink) };
     fileCell.append(fileLink);
-    console.warn(duplicate);
     function getFile(file, link) {
         if ((link.href ?? "").startsWith("blob")) return;
         let read = new FileReader();
@@ -184,5 +198,5 @@ document.getElementById("noShowTip").addEventListener("click", () => {
     document.getElementById("fileTip").style.opacity = 0;
     setTimeout(() => { document.getElementById("fileTip").style.display = "none" }, 270);
 });
-let appVersion = "1.0.0";
+let appVersion = "1.0.1";
 fetch("./update.txt", { cache: "no-store" }).then((res) => res.text().then((text) => { if (text.replace("\n", "") !== appVersion) if (confirm(`There's a new version of Empty Directory Look. Do you want to update? [${appVersion} --> ${text.replace("\n", "")}]`)) { caches.delete("easybackup-cache"); location.reload(true); } }).catch((e) => { console.error(e) })).catch((e) => console.error(e));
