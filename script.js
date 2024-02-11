@@ -61,34 +61,50 @@ async function startCopy() {
         let inputFileHandle = await getInputHandle.getFileHandle(fileName);
         let getOutputHandle = defaultScript.output.handle;
         for (let folder of fileSplit) getOutputHandle = await getOutputHandle.getDirectoryHandle(folder, { create: true });
-        getOutputHandle = await getOutputHandle.getFileHandle(fileName, { create: true });;
+        let getOutputFileHandle = await getOutputHandle.getFileHandle(fileName, { create: true });;
         let file = await inputFileHandle.getFile();
         let isOriginal = defaultScript.output.files.indexOf(item) === -1 || document.getElementById("overwrite").value === "overwrite";
-        let getTableContent = createTable({ file: file, duplicate: isOriginal ? undefined : await getOutputHandle.getFile(), name: item, getOutputHandle: getOutputHandle });
-        let checkForHash = !isOriginal && document.getElementById("overwrite").value === "askcheck" && await getFileHash(file) !== await getFileHash(await getOutputHandle.getFile());
+        let getTableContent = createTable({ file: file, duplicate: isOriginal ? undefined : await getOutputFileHandle.getFile(), name: item, getOutputHandle: getOutputFileHandle, folderRef: getOutputHandle });
+        let checkForHash = !isOriginal && document.getElementById("overwrite").value === "askcheck" && await getFileHash(file) !== await getFileHash(await getOutputFileHandle.getFile());
         if (document.getElementById("overwrite").value === "askcheck" && !isOriginal && !checkForHash) {
             duplicatesFound.duplicates--;
             document.getElementById("progress").value = parseInt(document.getElementById("progress").value) + 1;
         }
         if (isOriginal || document.getElementById("overwrite").value === "ask" || checkForHash) document.getElementById("addFiles").insertBefore(getTableContent.row, isOriginal ? null : document.getElementById("addFiles").children[1]);
-        if (isOriginal) {
-            document.getElementById("progress").value = parseInt(document.getElementById("progress").value) + 1;
-            let writableStream = await getOutputHandle.createWritable();
-            await writableStream.write(file);
-            await writableStream.close();
-            getTableContent.afterEdit.textContent = "Copied!";
-        }
+        if (isOriginal) await copyFile({ getOutputHandle: getOutputFileHandle, file: file, textUpdate: getTableContent.afterEdit, folder: getOutputHandle });
     }
     duplicatesFound.finished = true;
     updateOperationStatus();
     defaultScript.conversionStarted = false;
+}
+async function copyFile({ getOutputHandle, file, textUpdate, folder }) {
+    document.getElementById("progress").value = parseInt(document.getElementById("progress").value) + 1;
+    let updateProgress = document.createElement("progress");
+    updateProgress.max = "100";
+    updateProgress.style.marginBottom = "5px";
+    if (document.getElementById("changeColor").value === "keep") updateProgress.style.setProperty("--accent", "var(--second)");
+    textUpdate.innerHTML = "";
+    let updateText = document.createElement("label");
+    updateText.textContent = "Copying...";
+    textUpdate.append(updateProgress, document.createElement("br"), updateText);
+    let writableStream = await getOutputHandle.createWritable();
+    let interval = setInterval(async () => {
+        let item = await folder.getFileHandle(`${file.name}.crswap`);
+        let newFile = await item.getFile();
+        updateProgress.value = newFile.size / file.size * 100;
+        updateText.textContent = `Copying (${manageBytes(newFile.size)}${document.getElementById("bytes").value.toUpperCase()} / ${manageBytes(file.size)}${document.getElementById("bytes").value.toUpperCase()})`;
+    }, isNaN(parseInt(document.getElementById("bytesRefreshRate").value)) ? 2500 : parseInt(document.getElementById("bytesRefreshRate").value));
+    await writableStream.write(file);
+    await writableStream.close();
+    textUpdate.textContent = "Copied!";
+    clearInterval(interval);
 }
 function updateOperationStatus() {
     if (!duplicatesFound.finished) return;
     document.getElementById("mainOperationWrite").textContent = duplicatesFound.duplicates === 0 ? "Finished!" : `Duplicates found (${duplicatesFound.duplicates})`;
 }
 
-function createTable({ file, duplicate, name, getOutputHandle }) {
+function createTable({ file, duplicate, name, getOutputHandle, folderRef }) {
     let row = document.createElement("tr");
     row.classList.add("opacity");
     let fileCell = document.createElement("td");
@@ -127,15 +143,12 @@ function createTable({ file, duplicate, name, getOutputHandle }) {
         lastEdit.append(document.createElement("br"), lastEditSecond);
         let currentReplace = document.createElement("button");
         currentReplace.textContent = "Replace file";
+        currentReplace.style.backgroundColor = "var(--second)";
         currentReplace.onclick = async () => {
             duplicatesFound.duplicates--;
             updateOperationStatus();
             if (document.getElementById("changeColor").value === "change") row.style.backgroundColor = "";
-            document.getElementById("progress").value = parseInt(document.getElementById("progress").value) + 1;
-            let writableStream = await getOutputHandle.createWritable();
-            await writableStream.write(file);
-            await writableStream.close();
-            currentAction.textContent = "Copied!";
+            await copyFile({ getOutputHandle: getOutputHandle, file: file, textUpdate: currentAction, folder: folderRef });
         }
         let ignoreBtn = document.createElement("button");
         ignoreBtn.textContent = "Ignore";
@@ -201,5 +214,5 @@ document.getElementById("noShowTip").addEventListener("click", () => {
     document.getElementById("fileTip").style.opacity = 0;
     setTimeout(() => { document.getElementById("fileTip").style.display = "none" }, 270);
 });
-let appVersion = "1.0.1";
+let appVersion = "1.0.2";
 fetch("./update.txt", { cache: "no-store" }).then((res) => res.text().then((text) => { if (text.replace("\n", "") !== appVersion) if (confirm(`There's a new version of Empty Directory Look. Do you want to update? [${appVersion} --> ${text.replace("\n", "")}]`)) { caches.delete("easybackup-cache"); location.reload(true); } }).catch((e) => { console.error(e) })).catch((e) => console.error(e));
