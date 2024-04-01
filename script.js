@@ -18,7 +18,7 @@ let defaultScript = {
 }
 if ((window.showDirectoryPicker ?? "") === "") document.getElementById("notSupported").style.display = "";
 async function openFile(isInput) {
-    defaultScript[isInput ? "input" : "output"].handle = await window.showDirectoryPicker();
+    defaultScript[isInput ? "input" : "output"].handle = await window.showDirectoryPicker({ id: `EasyBackup-${isInput ? "Input" : "Output"}FilePicker`, mode: "readwrite" });
     document.getElementById(isInput ? "inputFolder" : "firstStep").style.opacity = "0";
     async function getDirectoryValues(handle, path) {
         for await (let entry of handle.values()) entry.kind === "file" ? defaultScript[isInput ? "input" : "output"].files.push(`${path}/${entry.name}`) : await getDirectoryValues(await handle.getDirectoryHandle(entry.name), `${path}/${entry.name}`)
@@ -214,5 +214,5 @@ document.getElementById("noShowTip").addEventListener("click", () => {
     document.getElementById("fileTip").style.opacity = 0;
     setTimeout(() => { document.getElementById("fileTip").style.display = "none" }, 270);
 });
-let appVersion = "1.0.2";
+let appVersion = "1.0.3";
 fetch("./update.txt", { cache: "no-store" }).then((res) => res.text().then((text) => { if (text.replace("\n", "") !== appVersion) if (confirm(`There's a new version of Empty Directory Look. Do you want to update? [${appVersion} --> ${text.replace("\n", "")}]`)) { caches.delete("easybackup-cache"); location.reload(true); } }).catch((e) => { console.error(e) })).catch((e) => console.error(e));
