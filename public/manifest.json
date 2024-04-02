@@ -1,0 +1,16 @@
+{
+    "name": "EasyBackup",
+    "short_name": "EasyBackup",
+    "start_url": "index.html",
+    "display": "standalone",
+    "background_color": "#151515",
+    "theme_color": "#884c3a",
+    "orientation": "any",
+    "icons": [
+        {
+            "src": "./assets/icon.png",
+            "type": "image/png",
+            "sizes": "512x512"
+        }
+    ]
+}
