@@ -3,12 +3,12 @@ const cacheName = 'easybackup-cache';
 const filestoCache = [
     './',
     './index.html',
-    './script.js',
-    './style.css',
-    "./assets/icon.png",
-    "./assets/icon.svg",
-    "./manifest.json",
-    'https://fonts.googleapis.com/css2?family=Work+Sans:wght@400;700&display=swap',
+    './manifest.json',
+    './icon.svg',
+    "./icon.png",
+    "./assets/index.css",
+    "./assets/index.js",
+    'https://fonts.googleapis.com/css2?family=Work+Sans:wght@400;500;700&display=swap',
 ];
 self.addEventListener('install', e => {
     e.waitUntil(
