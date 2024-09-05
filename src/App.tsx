@@ -114,19 +114,19 @@ export default function App() {
       </Tip><br></br><br></br></>}
       {state.process === 0 ? <div className="container">
         <h2>Options:</h2>
-        <label>When founding duplicates:</label><select defaultValue={backupOptions.duplicates} onChange={(e) => valueStorage("duplicates", e.currentTarget.value)}>
+        <label className="flex hcenter gap">When founding duplicates:<select defaultValue={backupOptions.duplicates} onChange={(e) => valueStorage("duplicates", e.currentTarget.value)}>
           <option value="skip">Skip them</option>
           <option value="overwrite">Overwrite them</option>
           <option value="ask">Ask</option>
           <option value="askcheck">Ask, but check before if duplicate files are the same</option>
           <option value="askcheckskip">Ask, but automatically skip files that are the same</option>
-        </select><br></br><br></br>
-        <label>Copy files that end with:</label><input defaultValue={backupOptions.fileEnd} onChange={(e) => valueStorage("fileEnd", e.currentTarget.value)} style={{ width: "270px" }} type="text"
-          placeholder="Leave this field blank to copy everything"></input><br></br><br></br>
-        <label>Truncate the file sizes of </label><input defaultValue={backupOptions.decimalValues} type="number" onChange={(e) => valueStorage("decimalValues", +e.currentTarget.value)}
-          style={{ width: "40px" }} min="0" max="20"></input><label style={{ marginLeft: "10px" }}>decimal
-            values</label><br></br><br></br>
-        <label>Refresh the copied bytes every (ms): </label><input type="number" min="100" defaultValue={backupOptions.refreshCopiedBytes} onChange={(e) => valueStorage("refreshCopiedBytes", +e.currentTarget.value)}></input><br></br><br></br>
+        </select></label><br></br>
+        <label className="flex hcenter gap">Copy files that end with (you can specify more extensions by diving them with a |):<input defaultValue={backupOptions.fileEnd} onChange={(e) => valueStorage("fileEnd", e.currentTarget.value)} type="text"
+          placeholder="Leave this field blank to copy everything"></input></label><br></br>
+        <label className="flex hcenter gap">Truncate the file sizes of <input defaultValue={backupOptions.decimalValues} type="number" onChange={(e) => valueStorage("decimalValues", +e.currentTarget.value)}
+          style={{ width: "40px" }} min="0" max="20"></input>decimal
+          values</label><br></br>
+        <label className="flex hcenter gap">Refresh the copied bytes every (ms): <input type="number" min="100" defaultValue={backupOptions.refreshCopiedBytes} onChange={(e) => valueStorage("refreshCopiedBytes", +e.currentTarget.value)}></input></label><br></br><br></br>
         <button onClick={() => updateState(prevState => { return { ...prevState, process: 1 } })}>Start selecting files</button>
       </div> :
         state.process === 1 || state.process === 2 ? <div className="container">

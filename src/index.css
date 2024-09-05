@@ -71,9 +71,11 @@ input {
   border-radius: 8px;
   border-radius: 8px;
   border: 1px solid var(--text);
-  margin-left: 10px;
   color: var(--text);
-  transition: background-color 0.25s ease-in-out
+  transition: background-color 0.25s ease-in-out;
+  width: 100%;
+  width: -webkit-fill-available;
+  width: -moz-available;
 }
 
 table {
@@ -145,4 +147,7 @@ progress::-webkit-progress-value {
 
 tr {
   transition: background-color 0.15s ease-in-out;
+}
+.gap {
+  gap: 10px
 }
