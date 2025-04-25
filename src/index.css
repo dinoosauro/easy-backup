@@ -64,7 +64,7 @@ button:active {
 }
 
 select,
-input {
+input:not([type=checkbox]) {
   background-color: var(--accent);
   font-family: 'Work Sans', sans-serif;
   padding: 8px 15px;
@@ -76,6 +76,42 @@ input {
   width: 100%;
   width: -webkit-fill-available;
   width: -moz-available;
+}
+
+input[type=checkbox] {
+  appearance: none;
+  width: 60px;
+  height: 20px;
+  border-radius: 12px;
+  min-width: 60px;
+  background-color: var(--table);
+  border: 1px solid var(--text);
+  transition: background-color 0.2s ease-in-out;
+  position: relative;
+}
+
+input[type=checkbox]::before {
+  content: "";
+  width: 14px;
+  height: 14px;
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  transition: left 0.2s ease-in-out;
+  background-color: var(--text);
+  border-radius: 50%;
+}
+
+input[type=checkbox]:hover {
+  cursor: pointer;
+}
+
+input[type=checkbox]:checked::before {
+  left: 42px;
+}
+
+input[type=checkbox]:checked {
+  background-color: var(--accent);
 }
 
 table {
@@ -148,6 +184,7 @@ progress::-webkit-progress-value {
 tr {
   transition: background-color 0.15s ease-in-out;
 }
+
 .gap {
   gap: 10px
 }

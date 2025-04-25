@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Header from "./Components/Basic/Header";
 import Tip from "./Components/Tip";
 import CopyFile from "./Components/CopyFile";
@@ -18,7 +18,8 @@ interface SaveFilePicker {
 declare global {
   interface Window {
     showDirectoryPicker: ({ id, mode }: DirectoryPicker) => Promise<FileSystemDirectoryHandle>,
-    showSaveFilePicker: ({ id, suggestedName, types }: SaveFilePicker) => Promise<FileSystemFileHandle>
+    showSaveFilePicker: ({ id, suggestedName, types }: SaveFilePicker) => Promise<FileSystemFileHandle>,
+    ZIP: any
   }
   interface FileSystemDirectoryHandle {
     values: () => {
@@ -35,8 +36,8 @@ declare global {
 }
 interface State {
   process: number;
-  sourceHandle: FileSystemDirectoryHandle | null;
-  outputHandle: FileSystemDirectoryHandle | null;
+  sourceHandle: FileSystemDirectoryHandle | FileList | null;
+  outputHandle: FileSystemDirectoryHandle | FileList | null;
 }
 /**
  * Options for the current backup
@@ -99,19 +100,12 @@ export default function App() {
   }
   useEffect(() => {
     localStorage.getItem("EasyBackup-Theme") === "a" && changeTheme();
-  }, [])
+  }, []);
+  let useNormalFilePicker = useRef(typeof window.showDirectoryPicker === "undefined");
   return <>
     <Header></Header>
     <i>Copy all the files in a folder to another drive, using the File System API</i><br></br><br></br>
     {state.process !== 3 ? <>
-      {window.showDirectoryPicker === undefined && <><Tip title="Your browser isn't supported 🫠">
-        <label>To use this tool, your browser must support the <a target="_blank"
-          href="https://developer.mozilla.org/en-US/docs/Web/API/File_System_API#browser_compatibility">File
-          System API</a> and the <a target="_blank"
-            href="https://developer.mozilla.org/en-US/docs/Web/API/window/showDirectoryPicker#browser_compatibility">showDirectoryPicker
-            function.</a>
-          Please switch to a supported browser to continue.</label>
-      </Tip><br></br><br></br></>}
       {state.process === 0 ? <div className="container">
         <h2>Options:</h2>
         <label className="flex hcenter gap">When founding duplicates:<select defaultValue={backupOptions.duplicates} onChange={(e) => valueStorage("duplicates", e.currentTarget.value)}>
@@ -131,9 +125,32 @@ export default function App() {
       </div> :
         state.process === 1 || state.process === 2 ? <div className="container">
           <label>Now, select the folder {state.process === 1 ? "that will be copied." : "where the files will be copied"}</label><br></br><br></br>
+          {typeof window.showDirectoryPicker !== "undefined" ? <>
+            <label className="flex hcenter gap">
+              <input type="checkbox" defaultChecked={useNormalFilePicker.current} onChange={(e) => {
+                useNormalFilePicker.current = e.target.checked;
+              }}></input><span>Don't use the File System API for this operation. {state.process === 2 ? <>In this case, the files will be put into a zip file. Special thanks to the <a href="https://github.com/jimmywarting/StreamSaver.js/blob/master/examples/zip-stream.js" target="_blank">StreamSaver.JS's zip file script</a> that made this possible!</> : ""}</span>
+            </label><br></br><br></br>
+          </> : state.process === 2 && <><span>The files will be put into a zip file. Special thanks to the <a href="https://github.com/jimmywarting/StreamSaver.js/blob/master/examples/zip-stream.js" target="_blank">StreamSaver.JS's zip file script</a> that made this possible!</span><br></br><br></br></>}
           <button onClick={async () => {
-            let picker = await window.showDirectoryPicker({ id: `EasyBackup-${state.process === 1 ? "Source" : "Destination"}Folder`, mode: `read${state.process === 2 ? "write" : ""}` });
-            updateState(prevState => { return { ...prevState, process: prevState.process + 1, sourceHandle: prevState.process === 1 ? picker : prevState.sourceHandle, outputHandle: prevState.process === 2 ? picker : prevState.outputHandle } })
+            if (useNormalFilePicker.current) {
+              const input = Object.assign(document.createElement("input"), {
+                type: "file",
+                multiple: true,
+                webkitDirectory: true,
+                webkitdirectory: true,
+                directory: true
+              });
+              input.onchange = () => {
+                input.files && update(input.files);
+              }
+              input.click();
+            } else {
+              update(await window.showDirectoryPicker({ id: `EasyBackup-${state.process === 1 ? "Source" : "Destination"}Folder`, mode: `read${state.process === 2 ? "write" : ""}` }));
+            }
+            function update(picker: FileSystemDirectoryHandle | FileList) {
+              updateState(prevState => { return { ...prevState, process: prevState.process + 1, sourceHandle: prevState.process === 1 ? picker : prevState.sourceHandle, outputHandle: prevState.process === 2 ? picker : prevState.outputHandle } })
+            }
           }}>Select {state.process === 1 ? "the folder whose files will be copied" : "the folder where the files will be copied"}</button>
         </div> : <></>}
     </> : <><CopyFile options={backupOptions} source={state.sourceHandle as FileSystemDirectoryHandle} destination={state.outputHandle as FileSystemDirectoryHandle}></CopyFile></>
