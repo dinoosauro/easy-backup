@@ -96,7 +96,7 @@ export default function CopyFile({ source, destination, options }: Props) {
     const updateDomProgress = useRef(new Map<string, HTMLProgressElement | null>());
     const progressNumberDom = useRef(0);
     const destinationFolder = useRef<string>("");
-    const downloadUsingLink = useRef(localStorage.getItem("EasyBackup-DownloadLink") === "a");
+    const downloadUsingLink = useRef(typeof window.showDirectoryPicker === "undefined" || localStorage.getItem("EasyBackup-DownloadLink") === "a");
     function addToSource(file: string | File, isDestination = false) {
         let output = file instanceof File ? (file.webkitRelativePath || file.name).substring(Math.max(file.webkitRelativePath.indexOf("/"), 0)) : file;
         stateStorage.current[isDestination ? "destination" : "source"].push(file instanceof File ? file : output);
@@ -274,8 +274,8 @@ export default function CopyFile({ source, destination, options }: Props) {
                     if (operationSpan.current) operationSpan.current.textContent = `Copying ${stateStorage.current.sourcePath[progress].substring(1)}`;
                     // Obtain the WritableStream and copy the file
                     const writableStream = await (await navigateHandle(destination, stateStorage.current.sourcePath[progress].substring(1), true)).handle.createWritable();
-                    await writableStream.write(file);
-                    await writableStream.close();
+                    options.useStream ? await file.stream().pipeTo(writableStream) : await writableStream.write(file);
+                    !options.useStream && await writableStream.close();
                     updateMainProgress(); // Update the progress value of the main activity
                     updateState(prevState => { return { ...prevState, copiedFiles: [...prevState.copiedFiles, stateStorage.current.sourcePath[progress].substring(1)] } }); // Update the state, copying the next item
                     clearInterval(interval);
@@ -290,6 +290,7 @@ export default function CopyFile({ source, destination, options }: Props) {
                 if (progressDom) progressDom.value = 100;
                 const labelDom = updateDomLabel.current.get(path);
                 if (labelDom) labelDom.textContent = `Completed!`;
+                await new Promise(res => setTimeout(res, options.sleep));
             }
             if (!isDuplicate || isDuplicate && isForced) await copyCore();
             if (operationSpan.current) operationSpan.current.textContent = "Waiting user input for duplicates...";
@@ -308,17 +309,19 @@ export default function CopyFile({ source, destination, options }: Props) {
         })()
     }, [state.progress])
     return <>
-        <Tip title="Check the files:">
-            <label>You can download duplicate files by clicking on their "Last edit" date, or you can download the source file by clicking its name. All the links are in light bold.</label><br></br><br></br>
-            <label>Download using:</label><select onChange={(e) => {
-                let target = e.target as HTMLSelectElement;
-                downloadUsingLink.current = target.value === "a";
-                localStorage.setItem("EasyBackup-DownloadLink", target.value);
-            }} defaultValue={localStorage.getItem("EasyBackup-DownloadLink") ?? "b"} style={{ backgroundColor: "var(--second)" }}>
-                <option value={"a"}>Link</option>
-                <option value={"b"}>Save File Picker</option>
-            </select>
-        </Tip><br></br>
+        {typeof window.showSaveFilePicker !== "undefined" && <>
+            <Tip title="Check the files:">
+                <label>You can download duplicate files by clicking on their "Last edit" date, or you can download the source file by clicking its name. All the links are in light bold.</label><br></br><br></br>
+                <label>Download using:</label><select onChange={(e) => {
+                    let target = e.target as HTMLSelectElement;
+                    downloadUsingLink.current = target.value === "a";
+                    localStorage.setItem("EasyBackup-DownloadLink", target.value);
+                }} defaultValue={localStorage.getItem("EasyBackup-DownloadLink") ?? "b"} style={{ backgroundColor: "var(--second)" }}>
+                    <option value={"a"}>Link</option>
+                    <option value={"b"}>Save File Picker</option>
+                </select>
+            </Tip><br></br>
+        </>}
         <h2>Operation: <span ref={operationSpan}>Starting...</span></h2>
         <progress ref={mainProgress}></progress>
         <br></br><br></br>

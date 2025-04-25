@@ -29,7 +29,7 @@ body {
 }
 
 .container {
-  margin: 10px;
+  margin: 10px 0px;
   padding: 15px;
   border-radius: 8px;
   background-color: var(--second);
@@ -74,8 +74,6 @@ input:not([type=checkbox]) {
   color: var(--text);
   transition: background-color 0.25s ease-in-out;
   width: 100%;
-  width: -webkit-fill-available;
-  width: -moz-available;
 }
 
 input[type=checkbox] {
