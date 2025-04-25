@@ -206,7 +206,7 @@ export default function CopyFile({ source, destination, options }: Props) {
         })()
     }), []);
     useEffect(() => {
-        state.zipFileLink && window.open(state.zipFileLink, "_blank"); // Zip file ready to download: open it in a new window to start the download.
+        if (state.zipFileLink) location.href = state.zipFileLink; // Zip file ready to download
     }, [state.zipFileLink])
     /**
      * Keep only the files that ends with the specified string
