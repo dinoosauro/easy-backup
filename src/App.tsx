@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import Header from "./Components/Basic/Header";
 import Tip from "./Components/Tip";
 import CopyFile from "./Components/CopyFile";
@@ -41,26 +41,26 @@ interface State {
   sourceHandle: FileSystemDirectoryHandle | FileList | null;
   outputHandle: FileSystemDirectoryHandle | FileList | null;
 }
-/**
+export default function App() {
+  /**
  * Options for the current backup
  * @param duplicates how duplicates should be handled ("skip" them, "overwrite" them, "ask" the user, "askcheck" for checking also their hash or "askcheckskip" for skipping the files that have the same hash)
  * @param fileEnd keep only the files that ends with that string
  * @param decimalValues the number of decimal values to keep for file sizes
  * @param refreshCopiedBytes every *this* ms, check the progress of the file copy
  */
-let backupOptions = useRef<BackupOptions>({
-  duplicates: "ask",
-  fileEnd: "",
-  decimalValues: 2,
-  refreshCopiedBytes: 2500,
-  useNormalPicker: typeof window.showDirectoryPicker === "undefined",
-  pickDirectory: true
-});
-// Restore options from LocalStorage
-const restoreOptions = JSON.parse(localStorage.getItem("EasyBackup-BackupOptions") ?? "{}") as BackupOptions;
-// @ts-ignore
-for (let item in restoreOptions) backupOptions.current[item] = restoreOptions[item];
-export default function App() {
+  let backupOptions = useRef<BackupOptions>({
+    duplicates: "ask",
+    fileEnd: "",
+    decimalValues: 2,
+    refreshCopiedBytes: 2500,
+    useNormalPicker: typeof window.showDirectoryPicker === "undefined",
+    pickDirectory: true
+  });
+  // Restore options from LocalStorage
+  const restoreOptions = JSON.parse(localStorage.getItem("EasyBackup-BackupOptions") ?? "{}") as BackupOptions;
+  // @ts-ignore
+  for (let item in restoreOptions) backupOptions.current[item] = restoreOptions[item];
   let [state, updateState] = useState<State>({ process: 0, sourceHandle: null, outputHandle: null })
   /**
    * Edits a backup option, and saves it in the LocalStorage
@@ -132,7 +132,7 @@ export default function App() {
             <label className="flex hcenter gap">
               <input type="checkbox" defaultChecked={backupOptions.current.useNormalPicker} onChange={(e) => {
                 backupOptions.current.useNormalPicker = e.target.checked;
-              }}></input><span>Don't use the File System API for this operation. {state.process === 2 ? <>In this case, the files will be put into a zip file. The <a href="https://github.com/jimmywarting/StreamSaver.js/blob/master/examples/zip-stream.js" target="_blank">StreamSaver.JS library (licensed under the MIT license)</a> will be used for creating the zip file and downloading it.</> : ""}</span>
+              }}></input><span>Don't use the File System API for this operation. {state.process === 2 && <>In this case, the files will be put into a zip file. The <a href="https://github.com/jimmywarting/StreamSaver.js/blob/master/examples/zip-stream.js" target="_blank">StreamSaver.JS library (licensed under the MIT license)</a> will be used for creating the zip file and downloading it.</>}</span>
             </label><br></br><br></br>
           </> : state.process === 2 ? <><span>The files will be put into a zip file. The <a href="https://github.com/jimmywarting/StreamSaver.js/blob/master/examples/zip-stream.js" target="_blank">StreamSaver.JS library (licensed under the MIT license)</a> will be used for creating the zip file and downloading it.</span><br></br><br></br></> : <>
             <label className="flex hcenter gap">

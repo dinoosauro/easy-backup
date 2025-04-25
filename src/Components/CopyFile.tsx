@@ -51,10 +51,6 @@ interface State {
      * The unit used for file size
      */
     measure: string,
-    /**
-     * The link that needs to be used for zip file download.
-     */
-    zipFileLink?: string
 }
 interface Storage {
     source: (string | File)[],
@@ -328,14 +324,9 @@ export default function CopyFile({ source, destination, options }: Props) {
         <br></br><br></br>
         {destination instanceof FileList && <>
             <button onClick={() => {
-                if (state.zipFileLink) {
-                    window.open(state.zipFileLink, "_blank");
-                    return;
-                }
                 if (zipFile.current.close && zipFile.current.stream) {
                     zipFile.current.close();
                     const fileStream = window.streamSaver.createWriteStream(`${destinationFolder.current}-${Date.now()}.zip`);
-                    console.log(fileStream);
                     zipFile.current.stream.pipeTo(fileStream);
                 }
             }}>Download ZIP file (you can create a zip file only one time, so click this when everything you want has been copied)</button>
