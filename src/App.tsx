@@ -31,7 +31,9 @@ declare global {
     duplicates: "skip" | "overwrite" | "ask" | "askcheck" | "askcheckskip",
     fileEnd: string,
     decimalValues: number,
-    refreshCopiedBytes: number
+    refreshCopiedBytes: number,
+    useNormalPicker: boolean,
+    pickDirectory: boolean
   }
 }
 interface State {
@@ -46,16 +48,18 @@ interface State {
  * @param decimalValues the number of decimal values to keep for file sizes
  * @param refreshCopiedBytes every *this* ms, check the progress of the file copy
  */
-let backupOptions: BackupOptions = {
+let backupOptions = useRef<BackupOptions>({
   duplicates: "ask",
   fileEnd: "",
   decimalValues: 2,
-  refreshCopiedBytes: 2500
-}
+  refreshCopiedBytes: 2500,
+  useNormalPicker: typeof window.showDirectoryPicker === "undefined",
+  pickDirectory: true
+});
 // Restore options from LocalStorage
 const restoreOptions = JSON.parse(localStorage.getItem("EasyBackup-BackupOptions") ?? "{}") as BackupOptions;
 // @ts-ignore
-for (let item in restoreOptions) backupOptions[item] = restoreOptions[item];
+for (let item in restoreOptions) backupOptions.current[item] = restoreOptions[item];
 export default function App() {
   let [state, updateState] = useState<State>({ process: 0, sourceHandle: null, outputHandle: null })
   /**
@@ -65,8 +69,8 @@ export default function App() {
    */
   function valueStorage(key: keyof BackupOptions, value: number | string) {
     // @ts-ignore
-    backupOptions[key] = value;
-    localStorage.setItem("EasyBackup-BackupOptions", JSON.stringify(backupOptions));
+    backupOptions.current[key] = value;
+    localStorage.setItem("EasyBackup-BackupOptions", JSON.stringify(backupOptions.current));
   }
   let themes = {
     isDark: true,
@@ -101,45 +105,50 @@ export default function App() {
   useEffect(() => {
     localStorage.getItem("EasyBackup-Theme") === "a" && changeTheme();
   }, []);
-  let useNormalFilePicker = useRef(typeof window.showDirectoryPicker === "undefined");
   return <>
     <Header></Header>
     <i>Copy all the files in a folder to another drive, using the File System API</i><br></br><br></br>
     {state.process !== 3 ? <>
       {state.process === 0 ? <div className="container">
         <h2>Options:</h2>
-        <label className="flex hcenter gap">When founding duplicates:<select defaultValue={backupOptions.duplicates} onChange={(e) => valueStorage("duplicates", e.currentTarget.value)}>
+        <label className="flex hcenter gap">When founding duplicates:<select defaultValue={backupOptions.current.duplicates} onChange={(e) => valueStorage("duplicates", e.currentTarget.value)}>
           <option value="skip">Skip them</option>
           <option value="overwrite">Overwrite them</option>
           <option value="ask">Ask</option>
           <option value="askcheck">Ask, but check before if duplicate files are the same</option>
           <option value="askcheckskip">Ask, but automatically skip files that are the same</option>
         </select></label><br></br>
-        <label className="flex hcenter gap">Copy files that end with (you can specify more extensions by diving them with a |):<input defaultValue={backupOptions.fileEnd} onChange={(e) => valueStorage("fileEnd", e.currentTarget.value)} type="text"
+        <label className="flex hcenter gap">Copy files that end with (you can specify more extensions by diving them with a |):<input defaultValue={backupOptions.current.fileEnd} onChange={(e) => valueStorage("fileEnd", e.currentTarget.value)} type="text"
           placeholder="Leave this field blank to copy everything"></input></label><br></br>
-        <label className="flex hcenter gap">Truncate the file sizes of <input defaultValue={backupOptions.decimalValues} type="number" onChange={(e) => valueStorage("decimalValues", +e.currentTarget.value)}
+        <label className="flex hcenter gap">Truncate the file sizes of <input defaultValue={backupOptions.current.decimalValues} type="number" onChange={(e) => valueStorage("decimalValues", +e.currentTarget.value)}
           style={{ width: "40px" }} min="0" max="20"></input>decimal
           values</label><br></br>
-        <label className="flex hcenter gap">Refresh the copied bytes every (ms): <input type="number" min="100" defaultValue={backupOptions.refreshCopiedBytes} onChange={(e) => valueStorage("refreshCopiedBytes", +e.currentTarget.value)}></input></label><br></br><br></br>
+        <label className="flex hcenter gap">Refresh the copied bytes every (ms): <input type="number" min="100" defaultValue={backupOptions.current.refreshCopiedBytes} onChange={(e) => valueStorage("refreshCopiedBytes", +e.currentTarget.value)}></input></label><br></br><br></br>
         <button onClick={() => updateState(prevState => { return { ...prevState, process: 1 } })}>Start selecting files</button>
       </div> :
         state.process === 1 || state.process === 2 ? <div className="container">
           <label>Now, select the folder {state.process === 1 ? "that will be copied." : "where the files will be copied"}</label><br></br><br></br>
           {typeof window.showDirectoryPicker !== "undefined" ? <>
             <label className="flex hcenter gap">
-              <input type="checkbox" defaultChecked={useNormalFilePicker.current} onChange={(e) => {
-                useNormalFilePicker.current = e.target.checked;
-              }}></input><span>Don't use the File System API for this operation. {state.process === 2 ? <>In this case, the files will be put into a zip file. Special thanks to the <a href="https://github.com/jimmywarting/StreamSaver.js/blob/master/examples/zip-stream.js" target="_blank">StreamSaver.JS's zip file script</a> that made this possible!</> : ""}</span>
+              <input type="checkbox" defaultChecked={backupOptions.current.useNormalPicker} onChange={(e) => {
+                backupOptions.current.useNormalPicker = e.target.checked;
+              }}></input><span>Don't use the File System API for this operation. {state.process === 2 ? <>In this case, the files will be put into a zip file. The <a href="https://github.com/jimmywarting/StreamSaver.js/blob/master/examples/zip-stream.js" target="_blank">StreamSaver.JS library (licensed under the MIT license)</a> will be used for creating the zip file and downloading it.</> : ""}</span>
             </label><br></br><br></br>
-          </> : state.process === 2 && <><span>The files will be put into a zip file. Special thanks to the <a href="https://github.com/jimmywarting/StreamSaver.js/blob/master/examples/zip-stream.js" target="_blank">StreamSaver.JS's zip file script</a> that made this possible!</span><br></br><br></br></>}
+          </> : state.process === 2 ? <><span>The files will be put into a zip file. The <a href="https://github.com/jimmywarting/StreamSaver.js/blob/master/examples/zip-stream.js" target="_blank">StreamSaver.JS library (licensed under the MIT license)</a> will be used for creating the zip file and downloading it.</span><br></br><br></br></> : <>
+            <label className="flex hcenter gap">
+              <input type="checkbox" defaultChecked={backupOptions.current.pickDirectory} onChange={(e) => {
+                backupOptions.current.pickDirectory = e.target.checked;
+              }}></input>Pick a directory (ignored if the File System API is used)
+            </label><br></br><br></br>
+          </>}
           <button onClick={async () => {
-            if (useNormalFilePicker.current) {
+            if (backupOptions.current.useNormalPicker) {
               const input = Object.assign(document.createElement("input"), {
                 type: "file",
                 multiple: true,
-                webkitDirectory: true,
-                webkitdirectory: true,
-                directory: true
+                webkitDirectory: state.process === 2 || backupOptions.current.pickDirectory,
+                webkitdirectory: state.process === 2 || backupOptions.current.pickDirectory,
+                directory: state.process === 2 || backupOptions.current.pickDirectory
               });
               input.onchange = () => {
                 input.files && update(input.files);
@@ -153,7 +162,7 @@ export default function App() {
             }
           }}>Select {state.process === 1 ? "the folder whose files will be copied" : "the folder where the files will be copied"}</button>
         </div> : <></>}
-    </> : <><CopyFile options={backupOptions} source={state.sourceHandle as FileSystemDirectoryHandle} destination={state.outputHandle as FileSystemDirectoryHandle}></CopyFile></>
+    </> : <><CopyFile options={backupOptions.current} source={state.sourceHandle as FileSystemDirectoryHandle} destination={state.outputHandle as FileSystemDirectoryHandle}></CopyFile></>
     }<br></br><br></br>
     <label className="hover" style={{ textDecoration: "underline" }} onClick={changeTheme} id="changeTheme">Change theme</label><a target="_blank" href="https://github.com/Dinoosauro/easy-backup"
       style={{ marginLeft: "10px" }}>View on GitHub</a><br></br><br></br>

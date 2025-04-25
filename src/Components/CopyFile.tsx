@@ -57,21 +57,9 @@ interface State {
     zipFileLink?: string
 }
 interface Storage {
-    /**
-     * Source files. Can be a string array (if a Directory Handle is provided) or a File array (if a FileList is provided).
-     */
     source: (string | File)[],
-    /**
-     * The path of the source files. It's always a string.
-     */
     sourcePath: string[]
-    /**
-     * Files available in the destination folder. Can be a string array (if a Directory Handle is provided) or a File array (if a FileList is provided).
-     */
     destination: (string | File)[],
-    /**
-     * The path of the files in the destination folder. It's always a string.
-     */
     destinationPath: string[]
 }
 /**
@@ -107,44 +95,26 @@ export default function CopyFile({ source, destination, options }: Props) {
         copiedFiles: [],
         measure: localStorage.getItem("EasyBackup-DefaultBytes") ?? "mb",
     });
-    /**
-     * Information about the files and their path of source and destination files
-     */
     const stateStorage = useRef<Storage>({ source: [], destination: [], sourcePath: [], destinationPath: [] });
-    /**
-     * Maps the path of a file with its progress label. Used to update the operation while copying.
-     */
     const updateDomLabel = useRef(new Map<string, HTMLDivElement | null>());
-    /**
-     * Maps the path of the file to its progress bar. Used to update the operation while copying.
-     */
     const updateDomProgress = useRef(new Map<string, HTMLProgressElement | null>());
-    /**
-     * The position of the last file that has been converted
-     */
     const progressNumberDom = useRef(0);
-    /**
-     * A string that contains the name of the destination folder
-     */
     const destinationFolder = useRef<string>("");
-    /**
-     * If a single file should be downloaded by using a link (if false, the File System API is used)
-     */
     const downloadUsingLink = useRef(localStorage.getItem("EasyBackup-DownloadLink") === "a");
-    /**
-     * A Map that contains the ID of a file operation, and then the function to resolve it. This is used when the main script needs to send to the Service Worker the file to add it in the zip file.
-     */
-    const resolveFileAdd = useRef<Map<number, () => void>>(new Map());
-    /**
-     * Add a new file in the Source or Destination arrays
-     * @param file the file path or the File object
-     * @param isDestination if the entry should be added in the destination arrays
-     */
     function addToSource(file: string | File, isDestination = false) {
         let output = file instanceof File ? (file.webkitRelativePath || file.name).substring(Math.max(file.webkitRelativePath.indexOf("/"), 0)) : file;
         stateStorage.current[isDestination ? "destination" : "source"].push(file instanceof File ? file : output);
         stateStorage.current[`${isDestination ? "destination" : "source"}Path`].push(output);
     }
+    let zipFile = useRef<{
+        enqueue: ((file: File, path: string) => void) | undefined
+        close: (() => void) | undefined,
+        stream: ReadableStream | undefined
+    }>({
+        enqueue: undefined,
+        close: undefined,
+        stream: undefined
+    });
     /**
      * The progress element of all the activities
      */
@@ -176,11 +146,6 @@ export default function CopyFile({ source, destination, options }: Props) {
             async function getDirectory({ handle, sourcePath, isInput }: { handle: FileSystemDirectoryHandle, sourcePath: string, isInput: boolean }) {
                 for await (let entry of handle.values()) entry.kind === "file" ? keepSuggestedFiles(entry.name) && addToSource(`${sourcePath}/${entry.name}`, !isInput) : await getDirectory({ handle: await handle.getDirectoryHandle(entry.name), sourcePath: `${sourcePath}/${entry.name}`, isInput: isInput })
             }
-            /**
-             * Add a FileList to the source or desstination arrays
-             * @param source the FileList to add
-             * @param destination if the entries should be added in the destination array
-             */
             function addFiles(source: FileList, destination = false) {
                 for (const file of source) keepSuggestedFiles(file.name) && addToSource(file, destination);
             }
@@ -188,26 +153,34 @@ export default function CopyFile({ source, destination, options }: Props) {
             destination instanceof FileList ? addFiles(destination, true) : await getDirectory({ handle: destination, sourcePath: "", isInput: false });
             if (mainProgress.current) mainProgress.current.max = stateStorage.current.source.length;
             if (destination instanceof FileList) {
-                if (destination[0].webkitRelativePath) destinationFolder.current = destination[0].webkitRelativePath.substring(0, destination[0].webkitRelativePath.indexOf("/")); // Update folder name
-                const channel = new BroadcastChannel("ServiceComms"); // This channel will be used by the Service Worker to communicate the new link
-                channel.onmessage = (msg) => {
-                    switch (msg.data.request) {
-                        case "url": // The link for downloading the zip file is available
-                            updateState(prevState => { return { ...prevState, zipFileLink: msg.data.content } })
-                            break;
-                        case "file": // Send a file to the Service Worker to add it in the zip file.
-                            const fn = resolveFileAdd.current.get(msg.data.content);
-                            fn && fn();
-                            break;
-                    }
-                }
-            } else destinationFolder.current = destination.name; // Update folder name
+                await new Promise<void>(res => {
+                    document.body.append(Object.assign(document.createElement("script"), {
+                        src: "https://dinoosauro.github.io/StreamSaver.js/StreamSaver.js",
+                        onload: () => {
+                            document.body.append(Object.assign(document.createElement("script"), {
+                                src: "https://dinoosauro.github.io/StreamSaver.js/examples/zip-stream.js",
+                                onload: () => {
+                                    window.streamSaver.mitm = "https://dinoosauro.github.io/StreamSaver.js/mitm.html"
+                                    res();
+                                }
+                            }))
+                        }
+                    }))
+                });
+                if (destination[0].webkitRelativePath) destinationFolder.current = destination[0].webkitRelativePath.substring(0, destination[0].webkitRelativePath.indexOf("/"));
+                zipFile.current.stream = new window.ZIP({ // Create a new ZIP file, using the "zip-stream" example from StreamSaver.JS
+                    start(ctrl: {
+                        enqueue: (file: File, name: string) => void,
+                        close: () => void
+                    }) {
+                        zipFile.current.enqueue = ctrl.enqueue;
+                        zipFile.current.close = ctrl.close;
+                    },
+                });
+            } else destinationFolder.current = destination.name;
             updateState(prevState => { return { ...prevState, progress: prevState.progress + 1 } }); // Start process
         })()
     }), []);
-    useEffect(() => {
-        if (state.zipFileLink) location.href = state.zipFileLink; // Zip file ready to download
-    }, [state.zipFileLink])
     /**
      * Keep only the files that ends with the specified string
      * @param file the file name
@@ -233,10 +206,10 @@ export default function CopyFile({ source, destination, options }: Props) {
         try {
             let file: File;
             const path = stateStorage.current.sourcePath[progress].substring(1); // Delete the "/" from the string. This is actually unnecessary, since it would be deleted later by the "navigateHandle" function
-            if (!(stateStorage.current.source[progress] instanceof File)) { // Use the File System API
+            if (!(stateStorage.current.source[progress] instanceof File)) {
                 const handle = (await navigateHandle((source as FileSystemDirectoryHandle), path)).handle;
                 file = await handle.getFile();
-            } else { // Simply get the File
+            } else {
                 file = stateStorage.current.source[progress];
             }
             let isDuplicate = stateStorage.current.destinationPath.indexOf(stateStorage.current.sourcePath[progress]) !== -1;
@@ -291,7 +264,7 @@ export default function CopyFile({ source, destination, options }: Props) {
              */
             async function copyCore() {
                 document.title = `[${progressNumberDom.current}/${mainProgress.current?.max}] - EasyBackup`;
-                if (!(destination instanceof FileList)) { // Use the File System API
+                if (!(destination instanceof FileList)) {
                     interval = setInterval(async () => {
                         const handleObj = await navigateHandle(destination, stateStorage.current.sourcePath[progress].substring(1)); // Get directory handle
                         const item = await handleObj.directory.getFileHandle(`${handleObj.name}.crswap`); // Get file handle of the temp file made by Chromium-based browsers
@@ -310,14 +283,9 @@ export default function CopyFile({ source, destination, options }: Props) {
                     updateMainProgress(); // Update the progress value of the main activity
                     updateState(prevState => { return { ...prevState, copiedFiles: [...prevState.copiedFiles, stateStorage.current.sourcePath[progress].substring(1)] } }); // Update the state, copying the next item
                     clearInterval(interval);
-                } else if (destination instanceof FileList) { // Save in the zip file
+                } else if (zipFile.current.enqueue && zipFile.current.close && zipFile.current.stream) {
                     if (operationSpan.current) operationSpan.current.textContent = `Adding ${stateStorage.current.sourcePath[progress].substring(1)} to the zip file`;
-                    await new Promise<void>(res => {
-                        const id = Math.random();
-                        resolveFileAdd.current.set(id, res);
-                        navigator.serviceWorker.controller?.postMessage({ request: "CheckConnection" });
-                        navigator.serviceWorker.controller?.postMessage({ request: "AddFile", file: file, path: stateStorage.current.sourcePath[progress], id });
-                    })
+                    zipFile.current.enqueue(file, stateStorage.current.sourcePath[progress]);
                     updateMainProgress();
                     updateState(prevState => { return { ...prevState, copiedFiles: [...prevState.copiedFiles, stateStorage.current.sourcePath[progress].substring(1)] } }); // Update the state, copying the next item
                 }
@@ -329,7 +297,6 @@ export default function CopyFile({ source, destination, options }: Props) {
             }
             if (!isDuplicate || isDuplicate && isForced) await copyCore();
             if (operationSpan.current) operationSpan.current.textContent = "Waiting user input for duplicates...";
-            document.title = "[Waiting User Input] - EasyBackup";
             if (!isForced) updateState(prevState => { return { ...prevState, progress: prevState.progress + 1 } })
         } catch (ex) {
             console.warn(ex);
@@ -365,8 +332,13 @@ export default function CopyFile({ source, destination, options }: Props) {
                     window.open(state.zipFileLink, "_blank");
                     return;
                 }
-                navigator.serviceWorker.controller?.postMessage({ request: "CreateFile", name: `${destinationFolder.current}-${Date.now()}.zip` })
-            }}>{state.zipFileLink ? "Open again the window with the zip file. Note that you can start the download only one time." : "Download ZIP file (you can create a zip file only one time, so click this when everything you want has been copied)"}</button>
+                if (zipFile.current.close && zipFile.current.stream) {
+                    zipFile.current.close();
+                    const fileStream = window.streamSaver.createWriteStream(`${destinationFolder.current}-${Date.now()}.zip`);
+                    console.log(fileStream);
+                    zipFile.current.stream.pipeTo(fileStream);
+                }
+            }}>Download ZIP file (you can create a zip file only one time, so click this when everything you want has been copied)</button>
         </>}
         <div className="container" style={{ overflow: "auto", margin: "10px 0px" }}>
             <h3>File table:</h3>
