@@ -186,3 +186,27 @@ tr {
 .gap {
   gap: 10px
 }
+
+.dialog {
+  position: fixed;
+  top: 0px;
+  left: 0px;
+  width: 100vw;
+  height: 100vh;
+  backdrop-filter: blur(8px) brightness(50%);
+  -webkit-backdrop-filter: blur(8px) brightness(50%);
+  transition: opacity 0.2s ease-in-out;
+  opacity: 0;
+  z-index: 2;
+}
+
+.dialog>div {
+  position: fixed;
+  top: 5vh;
+  left: 15vw;
+  width: calc(70vw - 16px);
+  border-radius: 8px;
+  border: 1px solid var(--text);
+  padding: 15px;
+  background-color: var(--second);
+}

@@ -3,6 +3,8 @@ import ConvertBytes from "./Scripts/ConvertBytes";
 import navigateHandle from "./Scripts/NavigationHandle";
 import FileRedownload from "./Scripts/FileRedownload";
 import Tip from "./Tip";
+import type { ZipWriterStream } from "@zip.js/zip.js";
+import { createRoot } from "react-dom/client";
 
 interface Props {
     source: FileSystemDirectoryHandle | FileList,
@@ -51,6 +53,10 @@ interface State {
      * The unit used for file size
      */
     measure: string,
+    /**
+     * If the zip file has been closed. In this case, the table should hide the Duplicates button
+     */
+    zipFileFinished?: boolean
 }
 interface Storage {
     source: (string | File)[],
@@ -102,15 +108,10 @@ export default function CopyFile({ source, destination, options }: Props) {
         stateStorage.current[isDestination ? "destination" : "source"].push(file instanceof File ? file : output);
         stateStorage.current[`${isDestination ? "destination" : "source"}Path`].push(output);
     }
-    let zipFile = useRef<{
-        enqueue: ((file: File, path: string) => void) | undefined
-        close: (() => void) | undefined,
-        stream: ReadableStream | undefined
-    }>({
-        enqueue: undefined,
-        close: undefined,
-        stream: undefined
-    });
+    /**
+     * The ZipWriterStream that is used when saving the file as a Zip file
+     */
+    let zipFile = useRef<ZipWriterStream | undefined>(undefined);
     /**
      * The progress element of all the activities
      */
@@ -149,30 +150,118 @@ export default function CopyFile({ source, destination, options }: Props) {
             destination instanceof FileList ? addFiles(destination, true) : await getDirectory({ handle: destination, sourcePath: "", isInput: false });
             if (mainProgress.current) mainProgress.current.max = stateStorage.current.source.length;
             if (destination instanceof FileList) {
-                await new Promise<void>(res => {
-                    document.body.append(Object.assign(document.createElement("script"), {
-                        src: "https://dinoosauro.github.io/StreamSaver.js/StreamSaver.js",
-                        onload: () => {
-                            document.body.append(Object.assign(document.createElement("script"), {
-                                src: "https://dinoosauro.github.io/StreamSaver.js/examples/zip-stream.js",
-                                onload: () => {
-                                    window.streamSaver.mitm = "https://dinoosauro.github.io/StreamSaver.js/mitm.html"
-                                    res();
-                                }
-                            }))
-                        }
-                    }))
-                });
                 if (destination[0].webkitRelativePath) destinationFolder.current = destination[0].webkitRelativePath.substring(0, destination[0].webkitRelativePath.indexOf("/"));
-                zipFile.current.stream = new window.ZIP({ // Create a new ZIP file, using the "zip-stream" example from StreamSaver.JS
-                    start(ctrl: {
-                        enqueue: (file: File, name: string) => void,
-                        close: () => void
-                    }) {
-                        zipFile.current.enqueue = ctrl.enqueue;
-                        zipFile.current.close = ctrl.close;
-                    },
-                });
+                const zipjs = await import("@zip.js/zip.js");
+                zipFile.current = new zipjs.ZipWriterStream({ zip64: options.useZip64 });
+                /**
+                 * The value that indicates if the File System API has been successfully used.
+                 */
+                let success = false;
+                if (typeof window.showSaveFilePicker !== "undefined") { // Use the File System API
+                    await new Promise<void>(res => { // Create a div where user action is requested so that the showSaveFilePicker request won't fail
+                        const root = document.createElement("div");
+                        const react = createRoot(root);
+                        react.render(<div className="dialog">
+                            <div>
+                                <h2>Create the zip file</h2>
+                                <p>You can create the zip file by clicking the button below. You'll be prompted to choose the file name and the path. We have to make you click another button since otherwise the "Save As" window cannot be opened due to browser restrictions.</p><br></br>
+                                <button onClick={async () => {
+                                    try {
+                                        const file = await window.showSaveFilePicker({
+                                            id: "EasyBackup-ZipFileSave", suggestedName: `${destinationFolder.current}-${Date.now()}.zip`, types: [
+                                                {
+                                                    description: "Zip File",
+                                                    accept: {
+                                                        "application/zip": [".zip"]
+                                                    }
+                                                }
+                                            ]
+                                        });
+                                        (zipFile.current as ZipWriterStream).readable.pipeTo(await file.createWritable());
+                                        success = true;
+                                    } catch (ex) {
+                                        console.warn(ex)
+                                    }
+                                    const dialog = root.querySelector(".dialog");
+                                    if (dialog instanceof HTMLElement) dialog.style.opacity = "0";
+                                    await new Promise(res2 => setTimeout(res2, 210));
+                                    react.unmount();
+                                    root.remove();
+                                    res();
+                                }}>Pick file</button>
+                            </div>
+                        </div>);
+                        document.body.append(root);
+                        setTimeout(() => { // Make the item visible
+                            const item = root.querySelector(".dialog");
+                            if (item instanceof HTMLElement) item.style.opacity = "1";
+                        }, 50);
+                    })
+                }
+                if (!success) { // Use the Service Worker method
+                    await new Promise<void>((res) => {
+                        /**
+                         * The ID of this new file
+                         */
+                        const id = crypto?.randomUUID() ?? Math.random().toString();
+                        /**
+                         * The BroadcastChannel used to receive messages from the Service Worker
+                         */
+                        const broadcast = new BroadcastChannel("SWMessage");
+                        /**
+                         * The Map that contains the Promises to resolve each time a chunk has been processed from the Service Worker
+                         */
+                        const ResMap = new Map<string, () => void>();
+                        broadcast.onmessage = (msg) => {
+                            switch (msg.data.action) {
+                                case "CreateStream": { // The zip file has been created.
+                                    if (msg.data.id === id) {
+                                        zipFile.current?.readable.pipeTo(new WritableStream({
+                                            write: async (chunk) => {
+                                                await new Promise<void>(res2 => { // Create a new Promise, that'll be resolved only when the Service Worker has added the chunk to the other stream.
+                                                    /**
+                                                     * The ID only for this specific chunk
+                                                     */
+                                                    const secondId = crypto?.randomUUID() ?? Math.random().toString();
+                                                    ResMap.set(secondId, res2);
+                                                    navigator.serviceWorker.controller?.postMessage({ action: "WriteFile", chunk, id, secondId }); // Send the chunk to the Service Worker
+                                                })
+                                            },
+                                            close: () => { // Finalize the zip file
+                                                navigator.serviceWorker.controller?.postMessage({ action: "CloseStream", id });
+                                            }
+                                        }));
+                                        if (!(/^((?!chrome|android).)*safari/i.test(navigator.userAgent))) { // Quick method to detect if Safari is being used. If not, open a pop-up window to download it (since otherwise it would fail).
+                                            const win = window.open(`${window.location.href}${window.location.href.endsWith("/") ? "" : "/"}downloader?id=${id}`, "_blank", "width=200,height=200");
+                                            if (!win) alert("A pop-up window was blocked. Please open it so that the download can start.");
+                                            (new Blob(["This file was automatically generated to close your browser's pop-up window. You can safely delete it."])).stream().pipeTo((zipFile.current as ZipWriterStream).writable("_.txt"));
+                                        } else {
+                                            /**
+                                            * Add an iFrame to the page to download the file. 
+                                            * This seems to work only on Safari, since it causes Chrome to crash and Firefox to block the resource. 
+                                            * I think that's the second time something works on Safari and not on Chrome, really surprised since usually it's the other way around.
+                                            */
+                                            const iframe = document.createElement("iframe");
+                                            iframe.src = `${window.location.href}${window.location.href.endsWith("/") ? "" : "/"}downloader?id=${id}`;
+                                            iframe.style = "width: 1px; height: 1px; position: fixed; top: -1px; left: -1px;"
+                                            document.body.append(iframe);
+                                        }
+                                        res();
+                                    }
+                                    break;
+                                }
+                                case "WriteFile": { // The chunk has been written. Resolve the promise
+                                    if (msg.data.id === id) {
+                                        const fn = ResMap.get(msg.data.secondId);
+                                        fn && fn();
+                                    }
+                                    break;
+                                }
+                            }
+                        }
+                        navigator.serviceWorker.controller?.postMessage({ action: "CreateStream", id, fileName: `${destinationFolder.current}-${Date.now()}.zip` }); // Ask the service worker to create the new zip file
+                    })
+                }
             } else destinationFolder.current = destination.name;
             updateState(prevState => { return { ...prevState, progress: prevState.progress + 1 } }); // Start process
         })()
@@ -201,7 +290,7 @@ export default function CopyFile({ source, destination, options }: Props) {
         let interval;
         try {
             let file: File;
-            const path = stateStorage.current.sourcePath[progress].substring(1); // Delete the "/" from the string. This is actually unnecessary, since it would be deleted later by the "navigateHandle" function
+            const path = stateStorage.current.sourcePath[progress].substring(stateStorage.current.sourcePath[progress].startsWith("/") ? 1 : 0); // Delete the "/" from the string. This is actually unnecessary, since it would be deleted later by the "navigateHandle" function
             if (!(stateStorage.current.source[progress] instanceof File)) {
                 const handle = (await navigateHandle((source as FileSystemDirectoryHandle), path)).handle;
                 file = await handle.getFile();
@@ -262,7 +351,7 @@ export default function CopyFile({ source, destination, options }: Props) {
                 document.title = `[${progressNumberDom.current}/${mainProgress.current?.max}] - EasyBackup`;
                 if (!(destination instanceof FileList)) {
                     interval = setInterval(async () => {
-                        const handleObj = await navigateHandle(destination, stateStorage.current.sourcePath[progress].substring(1)); // Get directory handle
+                        const handleObj = await navigateHandle(destination, path); // Get directory handle
                         const item = await handleObj.directory.getFileHandle(`${handleObj.name}.crswap`); // Get file handle of the temp file made by Chromium-based browsers
                         const newFile = await item.getFile();
                         const progressDom = updateDomProgress.current.get(path);
@@ -271,19 +360,19 @@ export default function CopyFile({ source, destination, options }: Props) {
                         if (labelDom) labelDom.textContent = `${ConvertBytes({ number: newFile.size, type: "MB" })} MB / ${ConvertBytes({ number: file.size, type: "MB" })} MB`;
                     }, options.refreshCopiedBytes);
                     // Update the title (both window and header)
-                    if (operationSpan.current) operationSpan.current.textContent = `Copying ${stateStorage.current.sourcePath[progress].substring(1)}`;
+                    if (operationSpan.current) operationSpan.current.textContent = `Copying ${path}`;
                     // Obtain the WritableStream and copy the file
-                    const writableStream = await (await navigateHandle(destination, stateStorage.current.sourcePath[progress].substring(1), true)).handle.createWritable();
+                    const writableStream = await (await navigateHandle(destination, path, true)).handle.createWritable();
                     options.useStream ? await file.stream().pipeTo(writableStream) : await writableStream.write(file);
                     !options.useStream && await writableStream.close();
                     updateMainProgress(); // Update the progress value of the main activity
-                    updateState(prevState => { return { ...prevState, copiedFiles: [...prevState.copiedFiles, stateStorage.current.sourcePath[progress].substring(1)] } }); // Update the state, copying the next item
+                    updateState(prevState => { return { ...prevState, copiedFiles: [...prevState.copiedFiles, path] } }); // Update the state, copying the next item
                     clearInterval(interval);
-                } else if (zipFile.current.enqueue && zipFile.current.close && zipFile.current.stream) {
-                    if (operationSpan.current) operationSpan.current.textContent = `Adding ${stateStorage.current.sourcePath[progress].substring(1)} to the zip file`;
-                    zipFile.current.enqueue(file, stateStorage.current.sourcePath[progress]);
+                } else if (zipFile.current) {
+                    if (operationSpan.current) operationSpan.current.textContent = `Adding ${path} to the zip file`;
+                    await file.stream().pipeTo(zipFile.current.writable(path));
                     updateMainProgress();
-                    updateState(prevState => { return { ...prevState, copiedFiles: [...prevState.copiedFiles, stateStorage.current.sourcePath[progress].substring(1)] } }); // Update the state, copying the next item
+                    updateState(prevState => { return { ...prevState, copiedFiles: [...prevState.copiedFiles, path] } }); // Update the state, copying the next item
                 }
                 // Update the progress value and the label content of the specific item
                 const progressDom = updateDomProgress.current.get(path);
@@ -326,13 +415,14 @@ export default function CopyFile({ source, destination, options }: Props) {
         <progress ref={mainProgress}></progress>
         <br></br><br></br>
         {destination instanceof FileList && <>
-            <button onClick={() => {
-                if (zipFile.current.close && zipFile.current.stream) {
-                    zipFile.current.close();
-                    const fileStream = window.streamSaver.createWriteStream(`${destinationFolder.current}-${Date.now()}.zip`);
-                    zipFile.current.stream.pipeTo(fileStream);
-                }
-            }}>Download ZIP file (you can create a zip file only one time, so click this when everything you want has been copied)</button>
+            <button onClick={async () => {
+                await zipFile.current?.close();
+                alert("The zip file has been saved. If you didn't choose where to save it, you can find it in the Downloads folder.");
+                if (operationSpan.current) operationSpan.current.textContent = "Zip file closed and saved!";
+                document.title = `[Completed] - EasyBackup`;
+                if (mainProgress.current) mainProgress.current.value = mainProgress.current.max;
+                updateState(prevState => { return { ...prevState, zipFileFinished: true } });
+            }}>Close ZIP file (the download will stop, but you won't be able to do other edits.)</button>
         </>}
         <div className="container" style={{ overflow: "auto", margin: "10px 0px" }}>
             <h3>File table:</h3>
@@ -352,7 +442,7 @@ export default function CopyFile({ source, destination, options }: Props) {
                             <option value="tb">Terabyte(s)</option>
                         </select></th>
                         {options.duplicates.startsWith("askcheck") && <th>Hash (only for duplicates)</th>}
-                        <th>Action:</th>
+                        {!state.zipFileFinished && <th>Action:</th>}
                     </tr>
                     {state.showString.map(({ name, edit, size, isDuplicate, entryNumber, duplicateInfo }) => <tr key={`EasyBackup-FileName-${name}-${edit}-${size}-${isDuplicate}-${state.measure}`} style={{ backgroundColor: state.copiedFiles.indexOf(name) !== -1 ? "var(--success)" : isDuplicate && duplicateInfo.hash[0] === duplicateInfo.hash[1] ? "var(--accent)" : isDuplicate ? "var(--attention)" : undefined }}>
                         <td><label className="link" onClick={() => FileRedownload({ path: name, handle: source instanceof FileList ? source[entryNumber] : source, useNormalLink: downloadUsingLink.current })}>{name}</label></td>
@@ -368,7 +458,7 @@ export default function CopyFile({ source, destination, options }: Props) {
                             <div role="label">{duplicateInfo.hash[0]}</div>
                             <div role="label" className="bottomCompare">{duplicateInfo.hash[1]}</div>
                         </td>}
-                        <td>{isDuplicate ? <div>
+                        {!state.zipFileFinished && <td>{isDuplicate ? <div>
                             <button onClick={() => copyItem(entryNumber, true)}>Replace</button>
                             <button onClick={() => {
                                 updateState(prevState => {
@@ -383,7 +473,7 @@ export default function CopyFile({ source, destination, options }: Props) {
                             }}>Skip</button>
                         </div> : <><progress max={100} className="bottomCompare" value={0} ref={el => (updateDomProgress.current.set(name, el))}></progress>
                             <div role="label" className="bottomCompare" ref={el => (updateDomLabel.current.set(name, el))}>NA</div>
-                        </>}</td>
+                        </>}</td>}
                     </tr>)}
                 </tbody>
             </table>

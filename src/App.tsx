@@ -35,7 +35,8 @@ declare global {
     useNormalPicker: boolean,
     pickDirectory: boolean,
     useStream: boolean,
-    sleep: number
+    sleep: number,
+    useZip64: boolean
   }
 }
 interface State {
@@ -59,7 +60,8 @@ export default function App() {
     useNormalPicker: typeof window.showDirectoryPicker === "undefined",
     pickDirectory: true,
     useStream: false,
-    sleep: 500
+    sleep: 500,
+    useZip64: false
   });
   // Restore options from LocalStorage
   const restoreOptions = JSON.parse(localStorage.getItem("EasyBackup-BackupOptions") ?? "{}") as BackupOptions;
@@ -142,16 +144,24 @@ export default function App() {
             <label className="flex hcenter gap">
               <input type="checkbox" defaultChecked={backupOptions.current.useNormalPicker} onChange={(e) => {
                 valueStorage("useNormalPicker", e.target.checked);
-              }}></input><span>Don't use the File System API for this operation. {state.process === 2 && <>In this case, the files will be put into a zip file. The <a href="https://github.com/jimmywarting/StreamSaver.js/blob/master/examples/zip-stream.js" target="_blank">StreamSaver.JS library (licensed under the MIT license)</a> will be used for creating the zip file and downloading it.</>}</span>
+              }}></input><span>Don't use the File System API for this operation. {state.process === 2 && <>In this case, the files will be put into a zip file. The <a href="https://github.com/gildas-lormeau/zip.js/" target="_blank">Zip.JS library (licensed under the BSD-3 license)</a> will be used to create the zip file.</>}</span>
             </label><br></br>
-          </> : state.process === 2 && <><span>The files will be put into a zip file. The <a href="https://github.com/jimmywarting/StreamSaver.js/blob/master/examples/zip-stream.js" target="_blank">StreamSaver.JS library (licensed under the MIT license)</a> will be used for creating the zip file and downloading it.</span><br></br><br></br></>}
+          </> : state.process === 2 && <>
+            <span>The files will be put into a zip file. The <a href="https://github.com/gildas-lormeau/zip.js/" target="_blank">Zip.JS library (licensed under the BSD-3 license)</a> will be used to create the zip file.</span><br></br><br></br>
+          </>}
           {state.process === 1 ? <>
-            <label className="flex hcenter gap">
+            <label className="flex hcenter gap" key={"PickDirectoryCheckbox"}>
               <input type="checkbox" defaultChecked={backupOptions.current.pickDirectory} onChange={(e) => {
                 valueStorage("pickDirectory", e.target.checked);
               }}></input>Pick a directory (ignored if the File System API is used)
             </label><br></br><br></br>
-          </> : <br></br>}
+          </> : <>
+            <label className="flex hcenter gap" key={"Zip64Checkbox"}>
+              <input type="checkbox" onChange={(e) => valueStorage("useZip64", e.target.checked)} defaultChecked={backupOptions.current.useZip64}></input>
+              Create a ZIP64 file. Enable this if the zip file could be bigger than 4GB.
+            </label>
+            <br></br>
+          </>}
           <button onClick={async () => {
             if (backupOptions.current.useNormalPicker) {
               const input = Object.assign(document.createElement("input"), {

@@ -19,13 +19,12 @@
 <body>
   <div id="root"></div>
   <script>
-    let appVersion = "2.1.3";
+    let appVersion = "2.1.4";
     if ('serviceWorker' in navigator) {
-      let registration;
-      const registerServiceWorker = async () => {
-        registration = await navigator.serviceWorker.register('./service-worker.js', { scope: location.href.substring(0, location.href.lastIndexOf("/") + 1) });
-      };
-      registerServiceWorker();
+      (async () => {
+        const result = await navigator.serviceWorker.register('./service-worker.js', { scope: location.href.substring(0, location.href.lastIndexOf("/") + 1) });
+        if (navigator.onLine) await result.update();
+      })()
     }
     fetch("./update.txt", { cache: "no-store" }).then((res) => {
       if (!res.ok) throw new Error("Failed fetching version number");
