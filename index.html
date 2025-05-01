@@ -19,7 +19,7 @@
 <body>
   <div id="root"></div>
   <script>
-    let appVersion = "2.1.4";
+    let appVersion = "2.1.5";
     if ('serviceWorker' in navigator) {
       (async () => {
         const result = await navigator.serviceWorker.register(`./service-worker.js?v=${appVersion}`, { scope: location.href.substring(0, location.href.lastIndexOf("/") + 1) });

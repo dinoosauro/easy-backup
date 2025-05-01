@@ -103,6 +103,7 @@ export default function CopyFile({ source, destination, options }: Props) {
     const progressNumberDom = useRef(0);
     const destinationFolder = useRef<string>("");
     const downloadUsingLink = useRef(typeof window.showDirectoryPicker === "undefined" || localStorage.getItem("EasyBackup-DownloadLink") === "a");
+    const lastModifiedList = useRef("");
     function addToSource(file: string | File, isDestination = false) {
         let output = file instanceof File ? (file.webkitRelativePath || file.name).substring(Math.max(file.webkitRelativePath.indexOf("/"), 0)) : file;
         stateStorage.current[isDestination ? "destination" : "source"].push(file instanceof File ? file : output);
@@ -212,7 +213,7 @@ export default function CopyFile({ source, destination, options }: Props) {
                          * The Map that contains the Promises to resolve each time a chunk has been processed from the Service Worker
                          */
                         const ResMap = new Map<string, () => void>();
-                        broadcast.onmessage = (msg) => {
+                        broadcast.onmessage = async (msg) => {
                             switch (msg.data.action) {
                                 case "CreateStream": { // The zip file has been created.
                                     if (msg.data.id === id) {
@@ -243,7 +244,7 @@ export default function CopyFile({ source, destination, options }: Props) {
                                             */
                                             const iframe = document.createElement("iframe");
                                             iframe.src = `${window.location.href}${window.location.href.endsWith("/") ? "" : "/"}downloader?id=${id}`;
-                                            iframe.style = "width: 1px; height: 1px; position: fixed; top: -1px; left: -1px;"
+                                            iframe.style = "width: 1px; height: 1px; position: fixed; top: -1px; left: -1px; z-index: -1"
                                             document.body.append(iframe);
                                         }
                                         res();
@@ -349,6 +350,7 @@ export default function CopyFile({ source, destination, options }: Props) {
              */
             async function copyCore() {
                 document.title = `[${progressNumberDom.current}/${mainProgress.current?.max}] - EasyBackup`;
+                lastModifiedList.current += `${file.lastModified} ${path}\n`;
                 if (!(destination instanceof FileList)) {
                     interval = setInterval(async () => {
                         const handleObj = await navigateHandle(destination, path); // Get directory handle
@@ -476,7 +478,13 @@ export default function CopyFile({ source, destination, options }: Props) {
                         </>}</td>}
                     </tr>)}
                 </tbody>
-            </table>
-        </div></>
+            </table><br></br>
+            <button onClick={() => FileRedownload({
+                path: `${destinationFolder.current}-LastModified.txt`,
+                handle: new File([lastModifiedList.current], `${destinationFolder.current}-LastModified.txt`),
+                useNormalLink: downloadUsingLink.current
+            })}>Download last modified list</button>
+        </div>
+    </>
 
 }
